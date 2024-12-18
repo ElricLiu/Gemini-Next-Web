@@ -85,36 +85,3 @@ export function base64ToArrayBuffer(base64: string) {
   }
   return bytes.buffer;
 }
-
-export function base64sToArrayBuffer(base64s: string[]) {
-  var binaryString = base64s.map(atob).join('');
-  var bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes.buffer;
-}
-
-export function pcmBufferToBlob(buffer: ArrayBuffer, sampleRate = 16000, bytesPerSample = 16): Blob {
-  const headerLength = 44;
-  const numberOfChannels = 1;
-  const byteLength = buffer.byteLength;
-  const header = new Uint8Array(headerLength);
-  const view = new DataView(header.buffer);
-  view.setUint32(0, 1380533830, false); // RIFF identifier 'RIFF'
-  view.setUint32(4, 36 + byteLength, true); // file length minus RIFF identifier length and file description length
-  view.setUint32(8, 1463899717, false); // RIFF type 'WAVE'
-  view.setUint32(12, 1718449184, false); // format chunk identifier 'fmt '
-  view.setUint32(16, 16, true); // format chunk length
-  view.setUint16(20, 1, true); // sample format (raw)
-  view.setUint16(22, numberOfChannels, true); // channel count
-  view.setUint32(24, sampleRate, true); // sample rate
-  view.setUint32(28, sampleRate * 4, true); // byte rate (sample rate * block align)
-  view.setUint16(32, numberOfChannels * 2, true); // block align (channel count * bytes per sample)
-  view.setUint16(34, bytesPerSample, true); // bits per sample
-  view.setUint32(36, 1684108385, false); // data chunk identifier 'data'
-  view.setUint32(40, byteLength, true); // data chunk length
-
-  // using data.buffer, so no need to setUint16 to view.
-  return new Blob([view, buffer], { type: "audio/wav" });
-}

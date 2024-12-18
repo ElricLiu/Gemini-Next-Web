@@ -47,9 +47,7 @@ interface MultimodalLiveClientEventTypes {
 	log: (log: StreamingLog) => void;
 	close: (event: CloseEvent) => void;
 	audio: (data: ArrayBuffer) => void;
-	audiocontent: (data: ModelTurn['modelTurn']['parts']) => void;
-	content: (data: ModelTurn) => void;
-	input: (data: RealtimeInputMessage | ClientContentMessage) => void;
+	content: (data: ServerContent) => void;
 	interrupted: () => void;
 	setupcomplete: () => void;
 	turncomplete: () => void;
@@ -85,12 +83,11 @@ export class MultimodalLiveClient extends EventEmitter<MultimodalLiveClientEvent
 		this.send = this.send.bind(this);
 	}
 
-	log(type: string, message: StreamingLog['message'], buffer?: ArrayBuffer) {
+	log(type: string, message: StreamingLog['message']) {
 		const log: StreamingLog = {
 			date: new Date(),
 			type,
 			message,
-			buffer,
 		};
 		this.emit('log', log);
 	}
@@ -214,7 +211,6 @@ export class MultimodalLiveClient extends EventEmitter<MultimodalLiveClientEvent
 						p.inlineData &&
 						p.inlineData.mimeType.startsWith('audio/pcm')
 				);
-				this.emit('audiocontent', audioParts);
 				const base64s = audioParts.map((p) => p.inlineData?.data);
 
 				// strip the audio parts out of the modelTurn
@@ -225,11 +221,7 @@ export class MultimodalLiveClient extends EventEmitter<MultimodalLiveClientEvent
 					if (b64) {
 						const data = base64ToArrayBuffer(b64);
 						this.emit('audio', data);
-						this.log(
-							`server.audio`,
-							`buffer (${data.byteLength})`,
-							data
-						);
+						this.log(`server.audio`, `buffer (${data.byteLength})`);
 					}
 				});
 				if (!otherParts.length) {
@@ -253,13 +245,10 @@ export class MultimodalLiveClient extends EventEmitter<MultimodalLiveClientEvent
 	sendRealtimeInput(chunks: GenerativeContentBlob[]) {
 		let hasAudio = false;
 		let hasVideo = false;
-		let audioBuffer: ArrayBuffer | undefined;
-
 		for (let i = 0; i < chunks.length; i++) {
 			const ch = chunks[i];
 			if (ch.mimeType.includes('audio')) {
 				hasAudio = true;
-				audioBuffer = base64ToArrayBuffer(ch.data);
 			}
 			if (ch.mimeType.includes('image')) {
 				hasVideo = true;
@@ -283,8 +272,7 @@ export class MultimodalLiveClient extends EventEmitter<MultimodalLiveClientEvent
 			},
 		};
 		this._sendDirect(data);
-		this.emit('input', data);
-		this.log(`client.realtimeInput`, message, audioBuffer);
+		this.log(`client.realtimeInput`, message);
 	}
 
 	/**
@@ -317,7 +305,6 @@ export class MultimodalLiveClient extends EventEmitter<MultimodalLiveClientEvent
 		};
 
 		this._sendDirect(clientContentRequest);
-		this.emit('input', clientContentRequest);
 		this.log(`client.send`, clientContentRequest);
 	}
 
