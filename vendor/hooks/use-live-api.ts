@@ -62,6 +62,7 @@ export function useLiveAPI({
   const botContentParts = useRef<Part[]>([]);
   // 用户输入的语音/图片需要保存起来，结束的时候生成语音/视频？
   const mediaChunks = useRef<GenerativeContentBlob[]>([]);
+  const userContentParts = useRef<Part[]>([]);
 
   // register audio for streaming server -> speakers
   useEffect(() => {
@@ -103,37 +104,49 @@ export function useLiveAPI({
   }, [client]);
 
   useEffect(() => {
-    let currnetBotMessageId: string = nanoid()
-    let currnetUserMessageId: string = nanoid()
-    // const onAudio = (data: ArrayBuffer) => {
-    //   // 保存结果到botAudioBuffers
-    //   botAudioBuffers.current?.push(data)
-    // }
+    let currentUserMessageId: string | null = null
+    let currentBotMessageId: string | null = null
+    const sendUserRealtimeInput = () => {
+      // 如果正在处理机器人语音，就不在中间截取短暂的用户语音
+      if (currentUserMessageId && mediaChunks.current?.length > 5 && !currentBotMessageId) {
+        setCurrentUserMessage({
+          clientContent: {
+            turns: [{
+              parts: userContentParts.current ?? []
+            }],
+          },
+          realtimeInput: {
+            mediaChunks: mediaChunks?.current,
+          },
+          id: currentUserMessageId,
+        })
+        currentUserMessageId = null  // 生成一个新的id?
+        mediaChunks.current = []  // 清空mediaChunks
+        userContentParts.current = []
+      }
+    }
     const onAudioContent = (data: ModelTurn['modelTurn']['parts']) => {
+      sendUserRealtimeInput();
       // 保存结果到botAudioParts
       botAudioParts.current = [...botAudioParts.current, ...data]
-    }
-    const onInput = (data: RealtimeInputMessage | ClientContentMessage) => {
-      if ((data as RealtimeInputMessage)?.realtimeInput?.mediaChunks) {
-        mediaChunks.current?.push(...(data as RealtimeInputMessage)?.realtimeInput?.mediaChunks)
-      }
-      if ((data as ClientContentMessage)?.clientContent) {
-        // 用户输入了就会有一个turnComplete，立即结束
-        setCurrentUserMessage({
-          ...data,
-          id: currnetUserMessageId,
-          // 先不处理输入的语音消息
-          // realtimeInput: {
-          //   mediaChunks: mediaChunks?.current ?? [],
-          // }
+      // start empty message
+      if (!currentBotMessageId) {
+        currentBotMessageId = nanoid()  // new nanoid
+        setCurrentBotMessage({
+          serverContent: {
+            modelTurn: {
+              parts: [],  // 空消息，展示loading
+            }
+          },
+          id: currentBotMessageId as string,
         })
-        currnetUserMessageId = nanoid()  // 生成一个新的id
-        mediaChunks.current = []  // 清空mediaChunks
       }
     }
     const onContent = (content: ModelTurn) => {
+      sendUserRealtimeInput();
       // 文本输出，将文本放到bot message里面
       if (content.modelTurn?.parts) {
+        if (!currentBotMessageId) currentBotMessageId = nanoid();
         botContentParts.current.push(...content.modelTurn?.parts)  
         // 这里需要先设置文本消息，支持实时的打字机效果
         setCurrentBotMessage({
@@ -143,29 +156,19 @@ export function useLiveAPI({
               parts: botContentParts.current,
             }
           },
-          id: currnetBotMessageId,
+          id: currentBotMessageId as string,
         })
       }
 		}
 		const onInterrupted = () => {
 			// 这个事件应该表示的是，机器人的语音消息被打断？实际上应该算用户语音输入开始
 			console.log('onInterrupted')
-			// if (buffers.length) {
-			// 	new Blob(buffers).arrayBuffer().then((buffer: ArrayBuffer) => {
-			// 		const blob = pcmBufferToBlob(buffer);
-			// 		const audioUrl = URL.createObjectURL(blob);
-			// 		const message = { audioUrl }
-			// 		setMessages((state: any) => {
-			// 			console.log('new message', state, message)
-			// 			return [...state, message]
-			// 		})
-			// 	})
-			// }
 		}
 		const onTurnComplete = () => {
 			// 这个事件表示机器人生成的消息结束了，不管是文本结束还是语音结束，都有这个消息
 			console.log('onTurnComplete')
 			if (botContentParts.current?.length || botAudioParts.current?.length) {
+        if (!currentBotMessageId) currentBotMessageId = nanoid();
         setCurrentBotMessage({
           serverContent: {
             modelTurn: {
@@ -173,13 +176,37 @@ export function useLiveAPI({
               parts: [...botContentParts.current, ...botAudioParts.current],
             }
           },
-          id: currnetBotMessageId,
+          id: currentBotMessageId as string,
         })
-        currnetBotMessageId = nanoid()
+        currentBotMessageId = null
         botContentParts.current = []; // 清空数据
         botAudioParts.current = [];
 			}
 		}
+    const onInput = (data: RealtimeInputMessage | ClientContentMessage) => {
+      if (!currentUserMessageId) currentUserMessageId = nanoid();
+      if ((data as RealtimeInputMessage)?.realtimeInput?.mediaChunks) {
+        mediaChunks.current?.push(...(data as RealtimeInputMessage)?.realtimeInput?.mediaChunks)
+        // 这个时候，可以生成一个loading状态的消息？
+      }
+      if ((data as ClientContentMessage)?.clientContent) {
+        // 用户输入了就会有一个turnComplete，立即结束
+        const parts = (data as ClientContentMessage)?.clientContent?.turns?.[0].parts
+        if (parts && parts?.length > 0) {
+          userContentParts.current.push(...parts);
+        }
+        setCurrentUserMessage({
+          ...data,
+          id: currentUserMessageId,
+          realtimeInput: {
+            mediaChunks: [],
+          }
+        })
+        // 这里不清空，等后面收到回复的时候，再尝试清空
+        // currentUserMessageId = nanoid()  // 生成一个新的id?
+        // mediaChunks.current = []  // 清空mediaChunks
+      }
+    }
     client
       .on('interrupted', onInterrupted)
       .on('turncomplete', onTurnComplete)
