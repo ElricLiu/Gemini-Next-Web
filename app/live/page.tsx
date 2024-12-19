@@ -61,6 +61,12 @@ const isClientMessage = (
 	return message !== null && 'clientContent' in message;
 };
 
+const isRealtimeInputMessage = (
+	message: MessageType
+): message is RealtimeInputMessage => {
+	return message !== null && 'realtimeInput' in message;
+};
+
 const isServerMessage = (
 	message: MessageType
 ): message is ServerContentMessage => {
@@ -116,9 +122,9 @@ const MessageItem: React.FC<{ message: MessageType }> = ({ message }) => {
 
     // TODO realtimeInput.mediaChunks可能包含图片png/jpeg，这个考虑转换成webp格式，再合并成video
 	const audioComponent = useMemo(() => {
-        let base64s = []
-        let rate = 2400
-		if (isClientMessage(message)) {
+        let base64s: string[] = []
+        let rate: number = 2400
+		if (isRealtimeInputMessage(message)) {
             rate = 1600
 			base64s = message?.realtimeInput.mediaChunks.filter(
                 (c) => c?.mimeType == "audio/pcm;rate=16000" && c?.data
@@ -127,7 +133,7 @@ const MessageItem: React.FC<{ message: MessageType }> = ({ message }) => {
 		if (isServerMessage(message) && hasModelTurn(message.serverContent)) {
 			base64s = message.serverContent.modelTurn?.parts.filter(
 				(p) => p.inlineData?.mimeType == "audio/pcm;rate=24000" && p.inlineData?.data
-			).map((p) => p.inlineData?.data);
+			).map((p) => p.inlineData?.data) as string[];
         }
         if (base64s.length) {
         	const buffer = base64sToArrayBuffer(base64s);
@@ -135,7 +141,7 @@ const MessageItem: React.FC<{ message: MessageType }> = ({ message }) => {
         	const audioUrl = URL.createObjectURL(blob);
         	return (
         		<Bubble
-        			key={`audio-${message.id}`}
+        			key={`audio-${message?.id}`}
         			placement={isClientMessage(message) ? 'end' : 'start'}
         			content={
         				<div>
@@ -236,7 +242,7 @@ const LivePage: React.FC = () => {
 	};
 
 	useEffect(() => {
-		console.log('currentBotMessage', currentBotMessage, 'text', currentBotMessage?.serverContent?.modelTurn?.parts?.[0]?.text);
+		console.log('currentBotMessage', currentBotMessage)
 		if (currentBotMessage) {
 			requestAnimationFrame(() => setMessages((messages) => {
 				if (

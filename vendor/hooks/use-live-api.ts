@@ -112,8 +112,10 @@ export function useLiveAPI({
         setCurrentUserMessage({
           clientContent: {
             turns: [{
+              role: 'user',
               parts: userContentParts.current ?? []
             }],
+            turnComplete: true,
           },
           realtimeInput: {
             mediaChunks: mediaChunks?.current,
