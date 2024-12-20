@@ -67,7 +67,7 @@ function MediaButtons({
 	const [muted, setMuted] = useState(DEFAULT_MUTED_STATE); 
 	const renderCanvasRef = useRef<HTMLCanvasElement>(null);
 
-	const { client, connected } = useLiveAPIContext();
+	const { client, connected, config } = useLiveAPIContext();
 
 	useEffect(() => {
 		document.documentElement.style.setProperty(
@@ -93,6 +93,13 @@ function MediaButtons({
 			client.off('close', resetState);
 		};
 	}, [client, webcam, screenCapture, audioRecorder, onVideoStreamChange]);
+
+    useEffect(() => {
+        // 如果是text模式，并且不是连接状态，改成默认静音
+        if (!connected && config?.generationConfig?.responseModalities == 'text') {
+            setMuted(true)
+        }
+    }, [config, connected])
 
 	useEffect(() => {
 		const onData = (base64: string) => {

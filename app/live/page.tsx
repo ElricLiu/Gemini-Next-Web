@@ -26,7 +26,7 @@ import { Sender, Bubble } from '@ant-design/x';
 import { useLocalStorageState } from 'ahooks';
 import FieldItem from '@/components/field-item';
 import GeminiIcon from '@/app/icon/google-gemini-icon.svg';
-import Image from 'next/image';
+import NextImage from 'next/image';
 import { GPTVis } from '@antv/gpt-vis';
 import { Part } from '@google/generative-ai';
 
@@ -61,6 +61,12 @@ const isClientMessage = (
 	return message !== null && 'clientContent' in message;
 };
 
+const isRealtimeInputMessage = (
+	message: MessageType
+): message is RealtimeInputMessage => {
+	return message !== null && 'realtimeInput' in message;
+};
+
 const isServerMessage = (
 	message: MessageType
 ): message is ServerContentMessage => {
@@ -73,7 +79,72 @@ const hasModelTurn = (
 	return 'modelTurn' in content && content.modelTurn !== null;
 };
 
+const VideoPlayer: React.FC<{ images: string[], interval: number, frameRate: number }> = ({ images, interval=2000, frameRate=10 }) => {
+    const canvasRef = useRef<HTMLCanvasElement | null>(null)
+    const recorderRef = useRef<MediaRecorder | null>(null)
+    const [video, setVideo] = useState<string | null>(null)
+    const [poster, setPoster] = useState<string | null>(null)
+
+    useEffect(() => {
+        if (canvasRef.current && images.length > 0 && !recorderRef.current) {
+            setPoster(images[0])
+            const canvas = canvasRef.current
+            const ctx = canvas.getContext('2d');
+            const recorder = recorderRef.current = new MediaRecorder(canvas.captureStream(frameRate), { mimeType: 'video/webm' });
+            const chunks = [];
+            recorder.ondataavailable = function (e) {
+                if (e.data.size > 0) {
+                    chunks.push(e.data);
+                }
+            };
+            recorder.onstop = function () {
+                const blob = new Blob(chunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                setVideo(url);
+                recorderRef.current = null;
+            };
+            recorder.start();
+            let currentImageIndex = 0;
+            const img = new Image()
+            img.onload = () => {
+                if (canvas.width !== img.width || canvas.height !== img.height) {
+                    canvas.width = img.width
+                    canvas.height = img.height
+                }
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            }
+
+            const i = setInterval(() => {
+                if (currentImageIndex >= images.length) {
+                    recorder.stop();
+                    clearInterval(i)
+                }
+                img.src = images[currentImageIndex++]
+            }, interval)
+        }
+    }, [images])
+
+    return (
+        <>
+            <canvas ref={canvasRef} style={{ display: 'none' }} />
+            {video || poster ? (
+                <video
+                    style={{
+                        maxWidth: 300,
+                        borderRadius: 10,
+                        border: '1px solid #333',
+                    }}
+                    poster={poster}
+                    src={video}
+                    controls
+                />
+            ) : null}
+        </>
+    )
+}
+
 const MessageItem: React.FC<{ message: MessageType }> = ({ message }) => {
+    const [count, setCount] = useState(11)
 	const textComponent = useMemo(() => {
 		if (isClientMessage(message)) {
 			const content = message.clientContent.turns?.[0]?.parts
@@ -84,7 +155,6 @@ const MessageItem: React.FC<{ message: MessageType }> = ({ message }) => {
 					key={message.id}
 					placement='end'
 					content={<GPTVis>{content}</GPTVis>}
-					typing={{ step: 2, interval: 50 }}
 					avatar={{
 						icon: <UserOutlined />,
 						style: fooAvatar,
@@ -97,11 +167,13 @@ const MessageItem: React.FC<{ message: MessageType }> = ({ message }) => {
 			const content = message.serverContent.modelTurn.parts
 				.map((p) => p?.text ?? '')
 				.join('');
-			return content ? (
+            const loading= message.serverContent.modelTurn.parts.length === 0
+			return loading || content ? (
 				<Bubble
 					key={message.id}
 					placement='start'
-					content={<GPTVis>{content}</GPTVis>}
+                    loading={loading}
+					content={content && <GPTVis>{content}</GPTVis>}
 					typing={{ step: 10, interval: 50 }}
 					avatar={{
 						icon: <RobotOutlined />,
@@ -113,45 +185,86 @@ const MessageItem: React.FC<{ message: MessageType }> = ({ message }) => {
 		return null;
 	}, [message]);
 
+    // TODO realtimeInput.mediaChunks可能包含图片png/jpeg，这个考虑转换成webp格式，再合并成video
+	const videoComponent = useMemo(() => {
+        let base64s: string[] = []
+		if (isRealtimeInputMessage(message)) {
+			base64s = message?.realtimeInput.mediaChunks.filter(
+                (c) => c?.mimeType == "image/jpeg" && c?.data
+            ).map((c) => `data:image/jpeg;base64, ${c.data}`);
+        }
+        if (base64s.length) {
+            // TODO 只展示第一张图
+        	return (
+        		<Bubble
+        			key={`video-${message?.id}`}
+        			placement={isClientMessage(message) ? 'end' : 'start'}
+        			content={<VideoPlayer images={base64s} />}
+        			avatar={isClientMessage(message) ? {
+						icon: <UserOutlined />,
+						style: fooAvatar,
+                    } : {
+        				icon: <RobotOutlined />,
+        				style: barAvatar,
+        			}}
+        			styles={{
+        				content: {
+        					padding: 8,
+        				},
+        			}}
+        		/>
+        	);
+		}
+		return null;
+	}, [message, count]);
+
 	const audioComponent = useMemo(() => {
+        let base64s: string[] = []
+        let rate: number = 2400
+		if (isRealtimeInputMessage(message)) {
+            rate = 1600
+			base64s = message?.realtimeInput.mediaChunks.filter(
+                (c) => c?.mimeType == "audio/pcm;rate=16000" && c?.data
+            ).map((c) => c.data);
+        }
 		if (isServerMessage(message) && hasModelTurn(message.serverContent)) {
-			const audioParts = message.serverContent.modelTurn?.parts.filter(
-				(p) => p.inlineData
-			);
-			if (audioParts.length) {
-				const base64s = audioParts
-					.map((p) => p.inlineData?.data)
-					.filter((data): data is string => data !== undefined);
-				const buffer = base64sToArrayBuffer(base64s);
-				const blob = pcmBufferToBlob(buffer, 24000);
-				const audioUrl = URL.createObjectURL(blob);
-				return (
-					<Bubble
-						key={`audio-${message.id}`}
-						placement='start'
-						content={
-							<div>
-								<audio
-									style={{
-										height: 30,
-									}}
-									controls
-									src={audioUrl}
-								/>
-							</div>
-						}
-						avatar={{
-							icon: <RobotOutlined />,
-							style: barAvatar,
-						}}
-						styles={{
-							content: {
-								padding: 8,
-							},
-						}}
-					/>
-				);
-			}
+			base64s = message.serverContent.modelTurn?.parts.filter(
+				(p) => p.inlineData?.mimeType == "audio/pcm;rate=24000" && p.inlineData?.data
+			).map((p) => p.inlineData?.data) as string[];
+        }
+        if (base64s.length) {
+        	const buffer = base64sToArrayBuffer(base64s);
+        	const blob = pcmBufferToBlob(buffer, rate);
+        	const audioUrl = URL.createObjectURL(blob);
+        	return (
+        		<Bubble
+        			key={`audio-${message?.id}`}
+        			placement={isClientMessage(message) ? 'end' : 'start'}
+        			content={
+        				<div>
+        					<audio
+        						style={{
+        							height: 30,
+        						}}
+        						controls
+        						src={audioUrl}
+        					/>
+        				</div>
+        			}
+        			avatar={isClientMessage(message) ? {
+						icon: <UserOutlined />,
+						style: fooAvatar,
+                    } : {
+        				icon: <RobotOutlined />,
+        				style: barAvatar,
+        			}}
+        			styles={{
+        				content: {
+        					padding: 8,
+        				},
+        			}}
+        		/>
+        	);
 		}
 		return null;
 	}, [message]);
@@ -159,6 +272,7 @@ const MessageItem: React.FC<{ message: MessageType }> = ({ message }) => {
 	return (
 		<>
 			{textComponent}
+			{videoComponent}
 			{audioComponent}
 		</>
 	);
@@ -226,9 +340,9 @@ const LivePage: React.FC = () => {
 	};
 
 	useEffect(() => {
-		console.log('currentBotMessage', currentBotMessage);
+		console.log('currentBotMessage', currentBotMessage)
 		if (currentBotMessage) {
-			setMessages((messages) => {
+			requestAnimationFrame(() => setMessages((messages) => {
 				if (
 					messages.filter((m) => m?.id === currentBotMessage?.id)
 						.length > 0
@@ -239,7 +353,7 @@ const LivePage: React.FC = () => {
 				} else {
 					return [...messages, currentBotMessage];
 				}
-			});
+			}));
 		}
 	}, [currentBotMessage]);
 
@@ -459,7 +573,7 @@ const LivePage: React.FC = () => {
 					</div>
 					<FieldItem
 						label='Model'
-						icon={<Image src={GeminiIcon} alt={'Model'} />}
+						icon={<NextImage src={GeminiIcon} alt={'Model'} />}
 					>
 						<Select
 							popupMatchSelectWidth={false}
