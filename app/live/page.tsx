@@ -81,17 +81,17 @@ const hasModelTurn = (
 
 const VideoPlayer: React.FC<{ images: string[], interval: number, frameRate: number }> = ({ images, interval=2000, frameRate=10 }) => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null)
+    const recorderRef = useRef<MediaRecorder | null>(null)
     const [video, setVideo] = useState<string | null>(null)
+    const [poster, setPoster] = useState<string | null>(null)
 
     useEffect(() => {
-        console.log('images', images, canvasRef.current)
-        if (canvasRef.current && images.length > 0) {
-            console.log('start video', images, canvasRef.current)
+        if (canvasRef.current && images.length > 0 && !recorderRef.current) {
+            setPoster(images[0])
             const canvas = canvasRef.current
             const ctx = canvas.getContext('2d');
-            const recorder = new MediaRecorder(canvas.captureStream(frameRate), { mimeType: 'video/webm' });
+            const recorder = recorderRef.current = new MediaRecorder(canvas.captureStream(frameRate), { mimeType: 'video/webm' });
             const chunks = [];
-            console.log('start video', recorder, chunks)
             recorder.ondataavailable = function (e) {
                 if (e.data.size > 0) {
                     chunks.push(e.data);
@@ -100,7 +100,8 @@ const VideoPlayer: React.FC<{ images: string[], interval: number, frameRate: num
             recorder.onstop = function () {
                 const blob = new Blob(chunks, { type: 'video/webm' });
                 const url = URL.createObjectURL(blob);
-                setVideo(url)
+                setVideo(url);
+                recorderRef.current = null;
             };
             recorder.start();
             let currentImageIndex = 0;
@@ -126,13 +127,14 @@ const VideoPlayer: React.FC<{ images: string[], interval: number, frameRate: num
     return (
         <>
             <canvas ref={canvasRef} style={{ display: 'none' }} />
-            {video ? (
+            {video || poster ? (
                 <video
                     style={{
                         maxWidth: 300,
                         borderRadius: 10,
                         border: '1px solid #333',
                     }}
+                    poster={poster}
                     src={video}
                     controls
                 />
@@ -142,7 +144,7 @@ const VideoPlayer: React.FC<{ images: string[], interval: number, frameRate: num
 }
 
 const MessageItem: React.FC<{ message: MessageType }> = ({ message }) => {
-    const [count, setCount] = useState(0)
+    const [count, setCount] = useState(11)
 	const textComponent = useMemo(() => {
 		if (isClientMessage(message)) {
 			const content = message.clientContent.turns?.[0]?.parts
