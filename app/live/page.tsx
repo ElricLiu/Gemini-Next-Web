@@ -26,7 +26,7 @@ import { Sender, Bubble } from '@ant-design/x';
 import { useLocalStorageState } from 'ahooks';
 import FieldItem from '@/components/field-item';
 import GeminiIcon from '@/app/icon/google-gemini-icon.svg';
-import Image from 'next/image';
+import NextImage from 'next/image';
 import { GPTVis } from '@antv/gpt-vis';
 import { Part } from '@google/generative-ai';
 
@@ -79,7 +79,70 @@ const hasModelTurn = (
 	return 'modelTurn' in content && content.modelTurn !== null;
 };
 
+const VideoPlayer: React.FC<{ images: string[], interval: number, frameRate: number }> = ({ images, interval=2000, frameRate=10 }) => {
+    const canvasRef = useRef<HTMLCanvasElement | null>(null)
+    const [video, setVideo] = useState<string | null>(null)
+
+    useEffect(() => {
+        console.log('images', images, canvasRef.current)
+        if (canvasRef.current && images.length > 0) {
+            console.log('start video', images, canvasRef.current)
+            const canvas = canvasRef.current
+            const ctx = canvas.getContext('2d');
+            const recorder = new MediaRecorder(canvas.captureStream(frameRate), { mimeType: 'video/webm' });
+            const chunks = [];
+            console.log('start video', recorder, chunks)
+            recorder.ondataavailable = function (e) {
+                if (e.data.size > 0) {
+                    chunks.push(e.data);
+                }
+            };
+            recorder.onstop = function () {
+                const blob = new Blob(chunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                setVideo(url)
+            };
+            recorder.start();
+            let currentImageIndex = 0;
+            const img = new Image()
+            img.onload = () => {
+                if (canvas.width !== img.width || canvas.height !== img.height) {
+                    canvas.width = img.width
+                    canvas.height = img.height
+                }
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            }
+
+            const i = setInterval(() => {
+                if (currentImageIndex >= images.length) {
+                    recorder.stop();
+                    clearInterval(i)
+                }
+                img.src = images[currentImageIndex++]
+            }, interval)
+        }
+    }, [images])
+
+    return (
+        <>
+            <canvas ref={canvasRef} style={{ display: 'none' }} />
+            {video ? (
+                <video
+                    style={{
+                        maxWidth: 300,
+                        borderRadius: 10,
+                        border: '1px solid #333',
+                    }}
+                    src={video}
+                    controls
+                />
+            ) : null}
+        </>
+    )
+}
+
 const MessageItem: React.FC<{ message: MessageType }> = ({ message }) => {
+    const [count, setCount] = useState(0)
 	const textComponent = useMemo(() => {
 		if (isClientMessage(message)) {
 			const content = message.clientContent.turns?.[0]?.parts
@@ -134,18 +197,7 @@ const MessageItem: React.FC<{ message: MessageType }> = ({ message }) => {
         		<Bubble
         			key={`video-${message?.id}`}
         			placement={isClientMessage(message) ? 'end' : 'start'}
-        			content={
-        				<div>
-        					<img
-        						style={{
-        							maxWidth: 300,
-                                    borderRadius: 10,
-                                    border: '1px solid #333',
-        						}}
-        						src={base64s[0]}
-        					/>
-        				</div>
-        			}
+        			content={<VideoPlayer images={base64s} />}
         			avatar={isClientMessage(message) ? {
 						icon: <UserOutlined />,
 						style: fooAvatar,
@@ -162,7 +214,7 @@ const MessageItem: React.FC<{ message: MessageType }> = ({ message }) => {
         	);
 		}
 		return null;
-	}, [message]);
+	}, [message, count]);
 
 	const audioComponent = useMemo(() => {
         let base64s: string[] = []
@@ -519,7 +571,7 @@ const LivePage: React.FC = () => {
 					</div>
 					<FieldItem
 						label='Model'
-						icon={<Image src={GeminiIcon} alt={'Model'} />}
+						icon={<NextImage src={GeminiIcon} alt={'Model'} />}
 					>
 						<Select
 							popupMatchSelectWidth={false}

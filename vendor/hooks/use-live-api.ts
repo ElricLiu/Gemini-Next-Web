@@ -106,9 +106,9 @@ export function useLiveAPI({
   useEffect(() => {
     let currentUserMessageId: string | null = null
     let currentBotMessageId: string | null = null
-    const sendUserRealtimeInput = () => {
+    const sendUserRealtimeInput = (force: boolean | undefined) => {
       // 如果正在处理机器人语音，就不在中间截取短暂的用户语音
-      if (currentUserMessageId && mediaChunks.current?.length > 5 && !currentBotMessageId) {
+      if (currentUserMessageId && (force || mediaChunks.current?.length > 5) && !currentBotMessageId) {
         setCurrentUserMessage({
           clientContent: {
             turns: [{
@@ -165,9 +165,11 @@ export function useLiveAPI({
 		const onInterrupted = () => {
 			// 这个事件应该表示的是，机器人的语音消息被打断？实际上应该算用户语音输入开始
 			console.log('onInterrupted')
+      sendUserRealtimeInput(true);
 		}
 		const onTurnComplete = () => {
 			// 这个事件表示机器人生成的消息结束了，不管是文本结束还是语音结束，都有这个消息
+      sendUserRealtimeInput(true);
 			console.log('onTurnComplete')
 			if (botContentParts.current?.length || botAudioParts.current?.length) {
         if (!currentBotMessageId) currentBotMessageId = nanoid();
