@@ -121,6 +121,49 @@ const MessageItem: React.FC<{ message: MessageType }> = ({ message }) => {
 	}, [message]);
 
     // TODO realtimeInput.mediaChunks可能包含图片png/jpeg，这个考虑转换成webp格式，再合并成video
+	const videoComponent = useMemo(() => {
+        let base64s: string[] = []
+		if (isRealtimeInputMessage(message)) {
+			base64s = message?.realtimeInput.mediaChunks.filter(
+                (c) => c?.mimeType == "image/jpeg" && c?.data
+            ).map((c) => `data:image/jpeg;base64, ${c.data}`);
+        }
+        if (base64s.length) {
+            // TODO 只展示第一张图
+        	return (
+        		<Bubble
+        			key={`video-${message?.id}`}
+        			placement={isClientMessage(message) ? 'end' : 'start'}
+        			content={
+        				<div>
+        					<img
+        						style={{
+        							maxWidth: 300,
+                                    borderRadius: 10,
+                                    border: '1px solid #333',
+        						}}
+        						src={base64s[0]}
+        					/>
+        				</div>
+        			}
+        			avatar={isClientMessage(message) ? {
+						icon: <UserOutlined />,
+						style: fooAvatar,
+                    } : {
+        				icon: <RobotOutlined />,
+        				style: barAvatar,
+        			}}
+        			styles={{
+        				content: {
+        					padding: 8,
+        				},
+        			}}
+        		/>
+        	);
+		}
+		return null;
+	}, [message]);
+
 	const audioComponent = useMemo(() => {
         let base64s: string[] = []
         let rate: number = 2400
@@ -175,6 +218,7 @@ const MessageItem: React.FC<{ message: MessageType }> = ({ message }) => {
 	return (
 		<>
 			{textComponent}
+			{videoComponent}
 			{audioComponent}
 		</>
 	);
